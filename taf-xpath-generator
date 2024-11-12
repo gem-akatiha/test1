@@ -1,0 +1,116 @@
+Here's a structured document to guide users through your XPath generator utility, covering its introduction, problem statement, functionality, and usage instructions.
+
+---
+
+# XPath Generator Utility Documentation
+
+## 1. Introduction
+
+The XPath Generator Utility is a powerful tool that automatically generates XPath locators for web elements on specified URLs. Designed to streamline test automation, this utility allows users to configure URLs and output paths in a YAML file, add a single dependency to their `build.gradle` file, and automatically generate XPaths in their desired project structure. The utility enhances efficiency by eliminating the need for manual XPath creation, reducing errors, and providing an organized structure for storing locators.
+
+## 2. Problem Statement
+
+Generating reliable XPaths for web elements can be time-consuming, especially in applications with dynamic or complex DOM structures. Manually creating and maintaining these locators is prone to error, leading to test failures and increased maintenance. This utility addresses these challenges by automating the XPath creation process, giving users an efficient and automated solution to generate, manage, and save XPath locators with minimal setup.
+
+## 3. How It Works
+
+### Overview
+
+The XPath Generator Utility automates the creation of XPath locators through a few key components:
+1. **YAML Configuration**: Users specify the URLs they wish to generate XPaths for, as well as the file paths where the generated XPaths should be saved.
+2. **Gradle Dependency**: Adding the `xpathGenerator` dependency in the user's `build.gradle` file enables the utility.
+3. **Automatic Trigger Class Generation**: Upon building the project, a class is auto-generated in the user's project structure. This class reads the YAML configuration and triggers the generation of XPath locators for the specified URLs.
+4. **Generated Output**: The utility outputs the generated XPaths in a structured Java class at each specified file path.
+
+### Step-by-Step Process
+
+1. **User Setup**:
+   - Users define the URLs and corresponding file paths for the XPath locators in a YAML configuration file (e.g., `xpath-config.yaml`).
+   - Users add the `xpathGenerator` dependency in their project’s `build.gradle` file.
+
+2. **Build and Generate**:
+   - When the user runs `./gradlew build`, the utility’s Gradle plugin checks for the YAML configuration and auto-generates a trigger class (e.g., `XpathTrigger.java`).
+   - The generated `XpathTrigger` class reads the YAML configuration and iterates through each URL, calling the utility’s main logic to create XPath locators.
+
+3. **XPath Generation**:
+   - The utility processes each URL, scraping the DOM and generating optimized XPath locators for all web elements.
+   - The generated XPaths are saved in Java files at the specified file paths.
+
+### YAML Configuration Format
+
+The YAML file, defined by the user, should follow this format:
+
+```yaml
+url1: "https://example.com/page1"
+filePath1: "/path/to/save/XPathFile1.java"
+
+url2: "https://example.com/page2"
+filePath2: "/path/to/save/XPathFile2.java"
+```
+
+### Example `build.gradle` Dependency
+
+In the user’s `build.gradle`:
+
+```gradle
+dependencies {
+    implementation 'com.yourcompany:xpathGenerator:1.0'
+}
+```
+
+## 4. Usage Instructions
+
+### Step 1: Define YAML Configuration
+1. In your project, create a YAML file named `xpath-config.yaml`.
+2. List each URL and specify a corresponding file path where the generated XPath Java class should be saved.
+
+### Step 2: Add Dependency in `build.gradle`
+Add the `xpathGenerator` dependency in your project’s `build.gradle` file.
+
+```gradle
+dependencies {
+    implementation 'com.yourcompany:xpathGenerator:1.0'
+}
+```
+
+### Step 3: Run Project Build
+1. Run the following command in your terminal to build your project:
+   ```bash
+   ./gradlew build
+   ```
+2. The build process will automatically generate the `XpathTrigger.java` file in your project structure.
+
+### Step 4: Execute XPath Generation
+Run the `XpathTrigger` class. This will parse the URLs from the YAML file, generate XPath locators, and save them to the specified files.
+
+### Example
+
+Assume the YAML file is as follows:
+
+```yaml
+url1: "https://example.com/login"
+filePath1: "src/main/java/com/yourcompany/generated/XPathLogin.java"
+
+url2: "https://example.com/dashboard"
+filePath2: "src/main/java/com/yourcompany/generated/XPathDashboard.java"
+```
+
+Running the `XpathTrigger` class will create:
+- `XPathLogin.java` containing XPaths for elements on the login page
+- `XPathDashboard.java` containing XPaths for elements on the dashboard page
+
+## 5. Additional Notes
+
+- **Customization**: You can modify the utility to handle additional attributes for XPath generation.
+- **Error Handling**: The utility handles invalid configurations by logging errors and skipping entries without breaking the entire process.
+- **Maintenance**: For future updates, ensure that the dependency version in `build.gradle` is updated to the latest.
+
+## 6. Troubleshooting
+
+- **YAML Parsing Errors**: Ensure proper YAML syntax and indentation.
+- **Build Issues**: Verify that the `xpathGenerator` dependency is correctly added to `build.gradle`.
+- **Output Verification**: Check that the specified file paths in the YAML file are valid and writable.
+
+---
+
+This document provides users with a comprehensive understanding of the XPath Generator Utility and guides them through the setup, configuration, and usage steps to successfully integrate it into their project. Let me know if there are other specifics you'd like to add!
