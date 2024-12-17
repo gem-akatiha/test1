@@ -1,0 +1,472 @@
+package org.example;
+
+import net.serenitybdd.core.Serenity;
+import net.serenitybdd.core.steps.UIInteractionSteps;
+import org.openqa.selenium.WebDriver;
+import net.serenitybdd.annotations.Managed;
+import org.apache.commons.text.CaseUtils;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.net.URL;
+import java.util.*;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class XPathGenerator extends UIInteractionSteps {
+    @Managed(driver="chrome")
+    WebDriver driver;
+    private static final Logger logger = LoggerFactory.getLogger(XPathGenerator.class);
+    private LinkedHashMap<String, String> xpathDictionary = new LinkedHashMap<>();
+    private LinkedHashMap<String, Integer> manageDuplicateKeys = new LinkedHashMap<>();
+
+    /**
+     * Validate URL
+     */
+    private boolean isValidURL(String url) {
+        try {
+            new URL(url);
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            logger.error("Xpaths can not be generated for url: "+url+", as the provided Url is incorrect");
+            return false;
+        }
+    }
+
+
+    private String launchUrl(String url){
+        openUrl(url);
+        return Serenity.getDriver().getPageSource();
+    }
+
+    /**
+     * Generate XPaths from page source
+     */
+    private Map<String, String> generateXPath(String htmlDoc) {
+        Document doc = Jsoup.parse(htmlDoc);
+
+        LinkedHashMap<String, String> uncleanedXpaths;
+
+        // List of tags to parse
+        List<String> tags = List.of(
+                "a", "button", "div", "i", "iframe", "input", "label",
+                "header", "h1", "h2", "h3", "h4", "h5", "h6",
+                "select", "span", "svg", "textarea", "td", "th"
+        );
+
+        List<String> highPriorityTags = List.of(
+                "a", "button", "h1", "h2", "h3", "h4", "h5", "h6",
+                "input", "textarea", "td", "th"
+        );
+
+        processSvgElements(doc);
+        processIonIconElements(doc);
+
+        // Process other elements
+        for (String tag : tags) {
+            Elements elements = doc.getElementsByTag(tag);
+
+            for (int index = 0; index < elements.size(); index++) {
+                Element element = elements.get(index);
+
+                if (highPriorityTags.contains(tag)) {
+                    processHighPriorityElement(element, index+1);
+                } else {
+                    processLowPriorityElement(element, index+1);
+                }
+            }
+        }
+
+        uncleanedXpaths = xpathDictionary;
+        return uncleanedXpaths;
+    }
+
+    /**
+     * Process SVG elements
+     */
+    private void processSvgElements(Document doc) {
+        Elements svgElements = doc.getElementsByTag("svg");
+        for (Element element : svgElements) {
+            String classAttr = element.attr("class").trim();
+            if (!classAttr.isEmpty()) {
+                String xpathName = "";
+                String xpathValue = "";
+                if (classAttr.contains("-")) {
+                    String[] classParts = classAttr.split("-");
+                    if(classParts.length >= 2) {
+                        String attributeValue = classParts[1];
+                        xpathName = attributeValue.replace("-", " ") + " Svg Icon";
+                        xpathName = CaseUtils.toCamelCase(xpathName, false, ' ');
+                        xpathValue = "//*[local-name()='svg' and contains(@class,'" + attributeValue + "')]";
+                    }else{
+                        xpathName = classAttr + " Svg Icon";
+                        xpathName = CaseUtils.toCamelCase(xpathName, false, ' ');
+                        xpathValue = "//*[local-name()='svg' and @class='" + classAttr + "']";
+                    }
+                    manageDuplicateXpathName(xpathName, xpathValue);
+                }
+            }
+        }
+    }
+
+    /**
+     * Process ion icon elements
+     * @param doc the soup of html page extracted.
+     */
+    private void processIonIconElements(Document doc) {
+        Elements ionIconElements = doc.getElementsByTag("ion-icon");
+        String[] attributes = {"name", "ios", "md", "aria-label", "class"};
+
+        for (Element element : ionIconElements) {
+            for (String attribute : attributes) {
+                String value = element.attr(attribute);
+                if (!value.isEmpty()) {
+                    String xpathName = value.replace("-", " ") + " Icon";
+                    xpathName = CaseUtils.toCamelCase(xpathName, false, ' ');
+
+                    // Correctly escape quotes for XPath (most important change)
+                    String xpathValue = String.format("//ion-icon[@%s=%s]", attribute, quoteXPathValue(value));
+
+                    manageDuplicateXpathName(xpathName, xpathValue);
+                }
+            }
+        }
+    }
+
+    // Helper function to properly quote XPath attribute values
+    private String quoteXPathValue(String value) {
+        if (value.contains("'")) {
+            return value.replace("'", "\\'");
+        }
+        return value;
+    }
+
+    /**
+     * Process high-priority elements
+     */
+    private void processHighPriorityElement(Element element, int index) {
+        String xpathName = "";
+        String xpathValue = "";
+        String xpath = selectXPathAttribute(element);
+        if (xpath != null) {
+            // Check if element is an icon. If yes, there is no need to generate xpath name
+            if(xpath.contains("thisIsAnIcon")){
+                xpathName = xpath.split("thisIsAnIcon")[0];
+                xpathValue = xpath.split("thisIsAnIcon")[1];
+            }else{
+                xpathName = generateXPathName(element, index);
+                xpathValue = xpath;
+                // Handle cases where xpath name is generic
+                if (xpathName.startsWith("delete_this_element_later")) {
+                    String childXpathName = createXpathNameUsingChildAttributes(element);
+                    if (childXpathName != null) {
+                        xpathName = childXpathName;
+                    }
+                }
+            }
+            manageDuplicateXpathName(xpathName, xpathValue);
+        }
+    }
+
+    /**
+     * Process low-priority elements
+     */
+    private void processLowPriorityElement(Element element, int index) {
+        // Check ancestors to avoid processing nested high-priority elements
+        if (!hasHighPriorityAncestor(element)) {
+            String xpathName = "";
+            String xpathValue = "";
+            String xpath = selectXPathAttribute(element);
+            if (xpath != null) {
+                // Check if element is an icon. If yes, there is no need to generate xpath name
+                if(xpath.contains("thisIsAnIcon")){
+                    xpathName = xpath.split("thisIsAnIcon")[0];
+                    xpathValue = xpath.split("thisIsAnIcon")[1];
+                }else {
+                    xpathName = generateXPathName(element, index);
+                    xpathValue = xpath;
+                }
+                manageDuplicateXpathName(xpathName, xpathValue);
+            }
+        }
+    }
+
+    /**
+     * Check if element has high-priority ancestor
+     */
+    private boolean hasHighPriorityAncestor(Element element) {
+        List<String> highPriorityTags = Arrays.asList(
+                "a", "button", "h1", "h2", "h3", "h4", "h5", "h6",
+                "input", "textarea", "td", "th"
+        );
+
+        Element parent = element.parent();
+        while (parent != null) {
+            if (highPriorityTags.contains(parent.tagName())) {
+                return true;
+            }
+            parent = parent.parent();
+        }
+        return false;
+    }
+
+    /**
+     * Manage duplicate xpath names
+     */
+    private void manageDuplicateXpathName(String xpathName, String xpathValue) {
+        if (manageDuplicateKeys.containsKey(xpathName)) {
+            // If xpath name exists, append number at the end
+            int count = manageDuplicateKeys.get(xpathName) + 1;
+            String newXpathName = xpathName + count;
+            xpathDictionary.put(newXpathName, xpathValue);
+            manageDuplicateKeys.put(xpathName, count);
+        } else {
+            xpathDictionary.put(xpathName, xpathValue);
+            manageDuplicateKeys.put(xpathName, 1);
+        }
+    }
+
+    /**
+     * Select XPath attribute for an element
+     */
+    private String selectXPathAttribute(Element element) {
+        // Get element text
+        String elementText = getElementText(element);
+        if (elementText != null) {
+            return "//"+element.tagName()+"[contains(text(),'"+elementText+"')]";
+        }
+
+        // First-class attributes
+        String[] commonAttributes = {"href", "src", "placeholder", "title", "aria-label", "label", "type"};
+        for (String attr : commonAttributes) {
+            String attrValue = element.attr(attr).trim();
+            if (!attrValue.isEmpty()) {
+                return "//"+element.tagName()+"[@"+attr+"='"+quoteXPathValue(attrValue)+"']";
+            }
+        }
+
+        // Check for icon classes
+        String[] possibleIcons = {
+                "fa fa-", "pi pi-", "bi bi-",
+                "fas fa-", "ri-", "la la-", "typcn typcn-",
+                "bx bx-", "font-icon glyphicon glyphicon-"
+        };
+
+        String classAttr = element.attr("class").trim();
+        if (!classAttr.isEmpty()) {
+            for (String icon : possibleIcons) {
+                if (classAttr.contains(icon)) {
+                    String xpathName = "";
+                    try {
+                        xpathName = classAttr.split(icon)[1].replace("-", " ") + " Icon";
+                    }catch (Exception e){
+                        throw new RuntimeException(classAttr);
+                    }
+                    xpathName = CaseUtils.toCamelCase(xpathName, false, ' ');
+                    String xpathValue = "//"+element.tagName()+"[@class='"+quoteXPathValue(classAttr)+"']";
+                    return xpathName+"thisIsAnIcon"+xpathValue;
+                }
+            }
+            // If class attribute does not contain any of the above icons, then return the class attribute
+            return "//"+element.tagName()+"[@class="+quoteXPathValue(classAttr)+"]";
+        }
+
+        String[] specificIconAttrs = {"data-feather", "data-icon"};
+        for (String specificIconAttr : specificIconAttrs) {
+            String iconAttr = element.attr(specificIconAttr).trim();
+            if (!iconAttr.isEmpty()) {
+                String xpathName = iconAttr.replace("-", " ") + " Icon";
+                xpathName = CaseUtils.toCamelCase(xpathName, false, ' ');
+                String xpathValue = "//" + element.tagName() + "[@"+specificIconAttr+"='"+quoteXPathValue(iconAttr)+"']";
+                return xpathName+"thisIsAnIcon"+xpathValue;
+            }
+        }
+
+        // Additional specific attributes
+        String[] anyOtherAttributes = {"id", "name", "value", "role", "ptooltip", "ng-reflect-text"};
+        for (String attr : anyOtherAttributes) {
+            String attrValue = element.attr(attr).trim();
+            if (!attrValue.isEmpty()) {
+                return "//"+element.tagName()+"[@"+attr+"='"+quoteXPathValue(attrValue)+"']";
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get element text without children's text
+     */
+    private String getElementText(Element element) {
+        String completeText = element.ownText().trim();
+        if (!completeText.isEmpty()) {
+            return quoteXPathValue(completeText);
+        }
+        return null;
+    }
+
+    /**
+     * Generate XPath name
+     */
+    private String generateXPathName(Element element, int index) {
+        String xpathName = null;
+
+        // Priority order for generating key
+        String[] keyAttributes = {
+                "text", "placeholder", "label", "aria-label",
+                "ng-reflect-text", "ptooltip", "formcontrolname"
+        };
+
+        for (String attr : keyAttributes) {
+            if (attr.equals("text")) {
+                String text = getElementText(element);
+                if (text != null) {
+                    xpathName = CaseUtils.toCamelCase(text, false, ' ');
+                    break;
+                }
+            } else {
+                String attrValue = element.attr(attr).trim();
+                if (!attrValue.isEmpty()) {
+                    xpathName = CaseUtils.toCamelCase(attrValue, false, ' ');
+                    break;
+                }
+            }
+        }
+
+        // Fallback naming
+        if (xpathName == null) {
+            xpathName = "delete_this_element_later_" + index;
+        }
+
+        // Add tag-specific suffix
+        if (element.tagName().equals("a")) {
+            xpathName += "Link";
+        } else if (Arrays.asList("h1", "h2", "h3", "h4", "h5", "h6").contains(element.tagName())) {
+            xpathName += "Heading";
+        } else {
+            String elementName = element.tagName();
+            xpathName = xpathName + elementName.substring(0,1).toUpperCase() + elementName.substring(1);
+        }
+
+        return xpathName;
+    }
+
+    /**
+     * Create XPath name using child attributes
+     */
+    private String createXpathNameUsingChildAttributes(Element element) {
+        String elementName = element.tagName();
+        if (elementName.equals("a")){
+            elementName = "Link";
+        }else{
+            elementName = elementName.substring(0,1).toUpperCase() + elementName.substring(1);
+        }
+
+        for (Element child : element.getAllElements()) {
+            // Check child text
+            String childText = getElementText(child);
+            if (childText != null) {
+                return CaseUtils.toCamelCase(childText, false, ' ') + elementName;
+            }
+
+            // Check various attributes
+            String[] attributes = {"placeholder", "label", "aria-label",
+                    "ng-reflect-text", "ptooltip", "formcontrolname"
+            };
+            for (String attr : attributes) {
+                String attrValue = child.attr(attr).trim();
+                if (!attrValue.isEmpty()) {
+                    return CaseUtils.toCamelCase(attrValue, false, ' ') + elementName;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Clean and save XPaths to file
+     */
+    private void saveXPathsToFile(String url) throws IOException {
+        // Remove placeholder keys
+        xpathDictionary.entrySet().removeIf(entry -> entry.getKey().startsWith("delete_this_element_later"));
+
+        // Create filename from URL
+        String fileName = createFilenameFromUrl(url);
+
+        // Ensure locators directory exists
+        File locatorsDir = new File("locators");
+        if (!locatorsDir.exists()) {
+            locatorsDir.mkdir();
+        }
+
+        // Resolve duplicates
+        resolveDuplicateXPaths(xpathDictionary);
+
+        // Write to JSON file
+        File outputFile = new File(locatorsDir, fileName);
+        try (FileWriter writer = new FileWriter(outputFile)) {
+            Gson gson = new GsonBuilder().disableHtmlEscaping().setPrettyPrinting().create();
+            gson.toJson(xpathDictionary, writer);
+        }
+    }
+
+    /**
+     * Create filename from URL
+     */
+    private String createFilenameFromUrl(String url) {
+        // Remove protocol and www
+        String fileName = url.replaceAll("^(https?://)?(www\\.)?", "");
+        // Remove domain extensions and trailing slashes
+        fileName = fileName.replaceAll("\\.(com|in|io|org|net|gov|edu|uk|co\\.\\w+)(/|$).*", "");
+        // Remove special characters
+        fileName = fileName.replaceAll("[^a-zA-Z0-9_]", "");
+
+        return fileName.substring(0,1).toUpperCase()+fileName.substring(1)+".json";
+    }
+
+    private String camelCase(String str){
+        str = str.replaceAll("[^a-zA-Z0-9_]", "");
+        CaseUtils.toCamelCase(text, false, ' ');
+    }
+
+    /**
+     * Resolve duplicate XPaths
+     */
+    private Map<String, String> resolveDuplicateXPaths(Map<String, String> xpathMap) {
+        List<String> allValidXpath = new ArrayList<>(new HashSet<>(xpathMap.keySet()));
+        for(String xpath : allValidXpath){
+            int index = 0;
+            for (Map.Entry<String, String> entry : xpathMap.entrySet()){
+                if(entry.getValue().equals(xpath) && Collections.frequency(xpathMap.values(), xpath) > 1){
+                    index++;
+                    entry.setValue(String.format("(%s)[%d]", xpath, index));
+                }
+            }
+        }
+        return xpathMap;
+    }
+
+    public void generateXpaths1(String url) throws IOException{
+        if(isValidURL(url)) {
+            String htmlDoc = launchUrl(url);
+//            LinkedHashMap<String, String> uncleanedXpaths = generateXPath(htmlDoc)
+            generateXPath(htmlDoc);
+            saveXPathsToFile(url);
+        }else{
+            logger.error("Provided url: '"+url+"' is incorrect");
+        }
+
+    }
+
+
+}
