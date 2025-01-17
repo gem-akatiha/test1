@@ -1,1 +1,395 @@
-write a new line in this file
+The task involves dynamically modifying example tables in Cucumber scenario outlines by enhancing the data injection mechanism within the TAF (Test Automation Framework). Here's how you can achieve the given actions step by step:
+
+---
+
+### **Action 1: Develop a solution to read values from the example table**
+1. **Identify the Example Table**: 
+   - Locate the Cucumber feature file containing the scenario outline with an example table.
+   
+2. **Read the Values Dynamically**:
+   - Use a library like **Jackson** or **Gson** to handle JSON parsing.
+   - In your step definition, read the table values dynamically by using `ScenarioContext` or a similar mechanism to pass data.
+
+   **Example Code** (in Java using Cucumber):
+   ```java
+   @Given("I have the following data")
+   public void readExampleTable(DataTable dataTable) {
+       List<Map<String, String>> data = dataTable.asMaps(String.class, String.class);
+       for (Map<String, String> row : data) {
+           System.out.println("Key: " + row.get("Key") + ", Value: " + row.get("Value"));
+       }
+   }
+   ```
+
+---
+
+### **Action 2: Develop an Enhanced Data Injection Mechanism**
+1. **Create JSON File for Data**:
+   - Structure your JSON file to represent test data with tags or unique identifiers.
+   - Example JSON:
+     ```json
+     {
+       "dataSet1": {
+         "Key1": "Value1",
+         "Key2": "Value2"
+       },
+       "dataSet2": {
+         "Key1": "Value3",
+         "Key2": "Value4"
+       }
+     }
+     ```
+
+2. **Read JSON and Inject into Example Table**:
+   - Write a utility function to read and inject JSON data dynamically into the test.
+   - Use `ObjectMapper` (Jackson) or similar libraries for JSON processing.
+
+   **Example Code**:
+   ```java
+   public Map<String, String> loadDataFromJson(String tag) throws IOException {
+       ObjectMapper mapper = new ObjectMapper();
+       File file = new File("path/to/data.json");
+       JsonNode rootNode = mapper.readTree(file);
+       JsonNode dataNode = rootNode.get(tag);
+
+       Map<String, String> dataMap = new HashMap<>();
+       dataNode.fields().forEachRemaining(entry -> {
+           dataMap.put(entry.getKey(), entry.getValue().asText());
+       });
+
+       return dataMap;
+   }
+   ```
+
+3. **Update Example Table**:
+   - Pass the JSON data dynamically into the `Scenario Outline` example table via placeholders.
+
+   **Example Usage in Cucumber**:
+   ```java
+   @Before
+   public void updateExampleTable() throws IOException {
+       Map<String, String> data = loadDataFromJson("dataSet1");
+       // Inject the data into the example table
+   }
+   ```
+
+---
+
+### **Action 3: Support for Data in Cucumber from JSON**
+1. **Create Data Loader Utility**:
+   - This utility should accept a tag and fetch the corresponding data from a JSON file.
+
+2. **Integrate Data Loader with Cucumber Hooks**:
+   - Use a `@Before` hook to preload data before the tests start.
+
+   **Example Code**:
+   ```java
+   @Before
+   public void injectTestData() throws IOException {
+       Map<String, String> testData = loadDataFromJson("dataSet1");
+       ScenarioContext.put("testData", testData);
+   }
+
+   @Given("I use dynamic data")
+   public void useDynamicData() {
+       Map<String, String> testData = ScenarioContext.get("testData");
+       System.out.println("Dynamic Data: " + testData);
+   }
+   ```
+
+---
+
+### **Future Enhancements (Optional)**
+- Create a **generic method** to load data identified by tags.
+- Add support for dynamic subsetting or masking of sensitive data.
+
+---
+
+### Reference Links
+The ticket already contains relevant links:
+1. **Cucumber Feature File**: [AccountPositions.feature](https://github.com/edwardjones/ej/aims-proposal-automation/blob/f816177eb738ae725a3ffe06c8bb8521a952450a/src/test/resources/features/aims-proposal-api/AccountPositions.feature#L13)
+2. **Step Definitions**: [AimsPositionsApiStepDefinitions.java](https://github.com/edwardjones/ej/aims-proposal-automation/blob/f816177eb738ae725a3ffe06c8bb8521a952450a/src/test/java/com/edwardjones/proposals/steps/api/aims/AimsPositionsApiStepDefinitions.java#L52)
+
+Would you like detailed code examples for JSON integration or any specific area?
+
+
+Yes, it is possible to read values from a JSON file and use them as a data source for Cucumber's Scenario Outline. You can dynamically generate the example table in your feature file or inject JSON data during test execution. Here's how to achieve this:
+
+---
+
+### **Approach 1: Dynamically Populate Example Table Using JSON**
+If you want to dynamically populate the `Examples` table in your Cucumber feature file at runtime, you can write a custom solution.
+
+#### **Steps**:
+1. **Store Test Data in JSON**:
+   Create a JSON file with the test data, where each object represents a row for the `Examples` table.
+
+   **Example JSON**:
+   ```json
+   [
+       {
+           "username": "user1",
+           "password": "pass1"
+       },
+       {
+           "username": "user2",
+           "password": "pass2"
+       }
+   ]
+   ```
+
+2. **Custom Runner or Data Injection Hook**:
+   Create a hook (`@Before`) or extend the Cucumber runner to dynamically generate the example table.
+
+3. **Read JSON File in Step Definitions**:
+   Use a library like **Jackson** or **Gson** to read the JSON data and pass it as parameters in your test.
+
+   **Example Code**:
+   ```java
+   @Before
+   public void injectTestData() throws IOException {
+       ObjectMapper mapper = new ObjectMapper();
+       List<Map<String, String>> testData = mapper.readValue(
+           new File("src/test/resources/testdata.json"),
+           new TypeReference<List<Map<String, String>>>() {}
+       );
+
+       // Store test data in context or inject dynamically
+       ScenarioContext.put("testData", testData);
+   }
+
+   @Given("I login with credentials")
+   public void login(Map<String, String> credentials) {
+       String username = credentials.get("username");
+       String password = credentials.get("password");
+       System.out.println("Logging in with username: " + username + " and password: " + password);
+   }
+   ```
+
+4. **Dynamic Data Mapping in Feature File**:
+   Create a generic scenario to handle dynamic data:
+   ```gherkin
+   Scenario Outline: Login with dynamic data
+       Given I login with credentials
+       Examples:
+           | username | password |
+           | <username> | <password> |
+   ```
+
+   Dynamically replace `<username>` and `<password>` using your injected JSON data.
+
+---
+
+### **Approach 2: Directly Generate the Feature File From JSON**
+You can generate a feature file at runtime by reading the JSON file and creating scenarios programmatically.
+
+#### **Steps**:
+1. **Create JSON Data**:
+   Store the required test data in a JSON file:
+   ```json
+   {
+       "scenarios": [
+           {
+               "scenario": "Valid login for user1",
+               "username": "user1",
+               "password": "pass1"
+           },
+           {
+               "scenario": "Valid login for user2",
+               "username": "user2",
+               "password": "pass2"
+           }
+       ]
+   }
+   ```
+
+2. **Generate Feature File Dynamically**:
+   Write a utility to generate a `.feature` file based on the JSON.
+
+   **Example Code**:
+   ```java
+   public void generateFeatureFile(String jsonFilePath, String featureFilePath) throws IOException {
+       ObjectMapper mapper = new ObjectMapper();
+       JsonNode rootNode = mapper.readTree(new File(jsonFilePath));
+
+       StringBuilder featureContent = new StringBuilder("Feature: Dynamic Feature\n\n");
+
+       for (JsonNode scenarioNode : rootNode.get("scenarios")) {
+           String scenario = scenarioNode.get("scenario").asText();
+           String username = scenarioNode.get("username").asText();
+           String password = scenarioNode.get("password").asText();
+
+           featureContent.append("  Scenario: ").append(scenario).append("\n")
+               .append("    Given I login with username \"").append(username).append("\" and password \"").append(password).append("\"\n\n");
+       }
+
+       Files.write(Paths.get(featureFilePath), featureContent.toString().getBytes());
+   }
+   ```
+
+3. **Run Tests With Generated Feature File**:
+   Use the dynamically created `.feature` file during test execution.
+
+---
+
+### **Approach 3: Use JSON Directly in Step Definitions**
+If you don't want to generate a feature file dynamically, you can use a single scenario with step definitions that directly read and process JSON data.
+
+#### **Steps**:
+1. **Feature File**:
+   Write a generic scenario:
+   ```gherkin
+   Scenario: Login with JSON data
+       Given I load data from "testdata.json"
+       When I login with credentials
+   ```
+
+2. **Step Definitions**:
+   ```java
+   @Given("I load data from {string}")
+   public void loadData(String jsonFilePath) throws IOException {
+       ObjectMapper mapper = new ObjectMapper();
+       List<Map<String, String>> testData = mapper.readValue(
+           new File("src/test/resources/" + jsonFilePath),
+           new TypeReference<List<Map<String, String>>>() {}
+       );
+       ScenarioContext.put("testData", testData);
+   }
+
+   @When("I login with credentials")
+   public void loginWithCredentials() {
+       List<Map<String, String>> testData = ScenarioContext.get("testData");
+       for (Map<String, String> credentials : testData) {
+           String username = credentials.get("username");
+           String password = credentials.get("password");
+           System.out.println("Logging in with username: " + username + ", password: " + password);
+       }
+   }
+   ```
+
+---
+
+### **Which Approach Should You Choose?**
+- **Approach 1** is suitable if you want to keep the feature file structure and only inject data at runtime.
+- **Approach 2** is ideal for projects where the feature file needs to be generated entirely based on test data.
+- **Approach 3** is simpler and avoids generating feature files but works well for data-driven tests with minimal setup.
+
+Would you like a detailed walkthrough of any specific approach?
+
+---
+
+Given the ticket you shared, the task focuses on **dynamically modifying example tables for Scenario Outline tests** by injecting data directly from a JSON file. Based on this, **Approach 1** is the most suitable for the following reasons:
+
+---
+
+### **Why Choose Approach 1?**
+#### 1. **Maintain Cucumber's Scenario Outline Structure**:
+   - The ticket explicitly mentions working with the **example table** in Scenario Outline tests. Approach 1 allows you to retain this structure while dynamically injecting data from a JSON file.
+   - This approach avoids manual maintenance of the feature file while still leveraging Cucumber's native data-driven testing capability.
+
+#### 2. **Dynamic Data Injection Meets the Requirement**:
+   - The ticket specifies that users should be able to **dynamically update JSON data** and inject it into the example table. Approach 1 achieves this by reading the JSON file and modifying the test data at runtime.
+
+#### 3. **Improved Test Reusability**:
+   - By reading data from a JSON file, the test remains flexible and reusable for different datasets without changing the feature file. This aligns with the ticket's goal of reducing setup time.
+
+#### 4. **Minimal Overhead**:
+   - Approach 1 integrates directly into existing feature files and uses runtime hooks (`@Before`) to load JSON data. It avoids the complexity of generating feature files dynamically (as in Approach 2) or requiring a non-standard workflow (as in Approach 3).
+
+---
+
+### **How to Implement Approach 1 for This Ticket**
+Here's how you can specifically implement the solution in line with the ticket's requirements:
+
+#### **1. Read Example Table Values Dynamically**:
+   - Use Cucumber's `DataTable` to load existing example table values in your step definitions.
+   - Dynamically update them based on JSON file values.
+
+#### **2. Develop Enhanced Data Injection Mechanism**:
+   - Create a utility to load data from the JSON file based on a tag or identifier.
+   - Replace placeholders in the example table with data from the JSON file.
+
+#### **3. Use JSON Data in Example Table for Scenario Outline**:
+   - Create a mapping between JSON keys and example table columns.
+   - Inject the data at runtime using a hook or a custom utility.
+
+---
+
+### **Example Implementation for the Ticket**
+
+#### **Feature File (Cucumber)**:
+You don't need to modify the feature file. Keep it as-is:
+```gherkin
+Scenario Outline: Login with dynamic data
+    Given I login with username "<username>" and password "<password>"
+
+    Examples:
+        | username | password |
+        | <username> | <password> |
+```
+
+#### **JSON File**:
+```json
+{
+    "users": [
+        { "username": "user1", "password": "pass1" },
+        { "username": "user2", "password": "pass2" }
+    ]
+}
+```
+
+#### **Step Definitions**:
+```java
+@Before
+public void injectDynamicData() throws IOException {
+    // Load JSON data
+    ObjectMapper mapper = new ObjectMapper();
+    List<Map<String, String>> testData = mapper.readValue(
+        new File("src/test/resources/testdata.json"),
+        new TypeReference<List<Map<String, String>>>() {}
+    );
+
+    // Update the example table dynamically
+    ScenarioContext.put("exampleTableData", testData);
+}
+
+@Given("I login with username {string} and password {string}")
+public void loginWithDynamicData(String username, String password) {
+    System.out.println("Logging in with Username: " + username + ", Password: " + password);
+}
+```
+
+#### **Hook for Dynamic Example Table Injection**:
+You can add a hook to modify the example table in runtime (if supported by your framework):
+```java
+@Before
+public void modifyExampleTable() {
+    List<Map<String, String>> exampleData = ScenarioContext.get("exampleTableData");
+    // Map this data to your example table dynamically
+}
+```
+
+---
+
+### **Future Scalability**
+This approach is scalable because:
+1. **Support for Multiple Datasets**: Adding more datasets to the JSON file requires no changes to the feature file.
+2. **Flexibility**: Users can switch datasets by modifying the JSON or tagging tests differently.
+3. **Ease of Maintenance**: The JSON file can be stored in a version-controlled repository and edited without affecting test scripts.
+
+---
+
+### **When to Avoid Other Approaches**
+1. **Approach 2 (Generate Feature Files Dynamically)**:
+   - This requires regenerating feature files every time the JSON data changes.
+   - It adds complexity and diverges from the standard Cucumber workflow.
+
+2. **Approach 3 (Read JSON Directly in Step Definitions)**:
+   - It doesn't leverage Cucumber's `Scenario Outline` and example table structure, which goes against the task's goal of modifying example tables.
+
+---
+
+### **Final Recommendation**
+Use **Approach 1** with a runtime hook or utility to inject JSON data into the example table. This balances flexibility, reusability, and adherence to Cucumber best practices. 
+
+Would you like me to refine the code further or help with specific parts of the implementation?
