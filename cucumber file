@@ -1,0 +1,234 @@
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.List;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+public class TestDataLoader {
+    public static List<Map<String, String>> loadFromJson(String filePath) {
+        try {
+            String json = new String(Files.readAllBytes(Paths.get(filePath)));
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(json, List.class);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load JSON data", e);
+        }
+    }
+}
+
+5. Use Scenario Context for Dynamic Data
+If overriding Examples is too complex, use a shared context (e.g., dependency injection) to pass JSON data to steps.
+import io.cucumber.java.en.When;
+
+public class LoginSteps {
+    private final TestContext context; // Shared context
+
+    public LoginSteps(TestContext context) {
+        this.context = context;
+    }
+
+    @When("I enter {string} and {string}")
+    public void enterCredentials(String username, String password) {
+        // Use values from JSON (mapped via context)
+        context.setUsername(username);
+        context.setPassword(password);
+    }
+}
+
+Here’s a **step-by-step solution** to dynamically inject data from a JSON file into a Cucumber Scenario Outline using keys in the `Examples` table. This approach avoids rewriting feature files and works within Cucumber’s constraints:
+
+---
+
+### **Step 1: Define Scenario Outline with Keys in Examples**
+Use **placeholder keys** in the `Examples` table that map to values in your JSON file:
+
+```gherkin
+Feature: Dynamic Login Test
+
+  Scenario Outline: Login with credentials from JSON
+    Given I am on the login page
+    When I enter "<username_key>" and "<password_key>"
+    Then I should see "<result_key>"
+
+    Examples:
+      | username_key | password_key | result_key |
+      | valid_user   | valid_pass   | success    |
+      | invalid_user | invalid_pass | failure    |
+```
+
+---
+
+### **Step 2: Create a JSON Data File**
+Store test data in a JSON file (e.g., `testdata/login.json`) with a structure that maps keys to values:
+
+```json
+{
+  "valid_user": "user1",
+  "valid_pass": "pass1",
+  "success": "Welcome!",
+  "invalid_user": "invalid",
+  "invalid_pass": "wrong",
+  "failure": "Login failed"
+}
+```
+
+---
+
+### **Step 3: Load JSON Data into a Shared Context**
+Use a **shared context class** (with dependency injection like Picocontainer) to load and store JSON data:
+
+```java
+// SharedContext.java
+import java.util.Map;
+
+public class SharedContext {
+    private Map<String, String> testData; // Stores key-value pairs from JSON
+
+    public void loadTestData(Map<String, String> data) {
+        this.testData = data;
+    }
+
+    public String getValue(String key) {
+        return testData.get(key);
+    }
+}
+```
+
+---
+
+### **Step 4: Load JSON Data in a @Before Hook**
+Use a `@Before` hook to load the JSON file into the shared context **before scenarios run**:
+
+```java
+// Hooks.java
+import io.cucumber.java.Before;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.File;
+import java.util.Map;
+
+public class Hooks {
+    private final SharedContext sharedContext;
+
+    public Hooks(SharedContext sharedContext) {
+        this.sharedContext = sharedContext;
+    }
+
+    @Before
+    public void loadTestData() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        Map<String, String> data = mapper.readValue(
+            new File("src/test/resources/testdata/login.json"), Map.class
+        );
+        sharedContext.loadTestData(data);
+    }
+}
+```
+
+---
+
+### **Step 5: Map Keys to Values in Step Definitions**
+In your step definitions, use the shared context to resolve keys from the `Examples` table to actual values:
+
+```java
+// LoginSteps.java
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.When;
+import io.cucumber.java.en.Then;
+
+public class LoginSteps {
+    private final SharedContext sharedContext;
+
+    public LoginSteps(SharedContext sharedContext) {
+        this.sharedContext = sharedContext;
+    }
+
+    @When("I enter {string} and {string}")
+    public void enterCredentials(String usernameKey, String passwordKey) {
+        // Resolve keys to actual values
+        String username = sharedContext.getValue(usernameKey);
+        String password = sharedContext.getValue(passwordKey);
+        loginPage.enterCredentials(username, password);
+    }
+
+    @Then("I should see {string}")
+    public void validateResult(String resultKey) {
+        String expectedResult = sharedContext.getValue(resultKey);
+        loginPage.assertResult(expectedResult);
+    }
+}
+```
+
+---
+
+### **How It Works**
+1. **Scenario Outline Execution**:
+   - Cucumber runs the scenario once for each row in the `Examples` table.
+   - The `username_key`, `password_key`, and `result_key` are passed to the steps as strings (e.g., `"valid_user"`, `"valid_pass"`).
+
+2. **Dynamic Data Resolution**:
+   - The step definitions use the shared context to resolve these keys (e.g., `"valid_user"`) to actual values (e.g., `"user1"`) from the JSON file.
+
+3. **No Hardcoded Data**:
+   - The feature file only references keys, and the actual data is loaded externally.
+
+---
+
+### **Project Structure**
+```
+src/test/
+├── java/
+│   ├── steps/
+│   │   └── LoginSteps.java
+│   ├── context/
+│   │   └── SharedContext.java
+│   └── hooks/
+│       └── Hooks.java
+├── resources/
+│   ├── features/
+│   │   └── login.feature
+│   └── testdata/
+│       └── login.json
+```
+
+---
+
+### **Dependencies (Maven)**
+Ensure you have these dependencies in `pom.xml`:
+```xml
+<dependencies>
+    <!-- Cucumber -->
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-java</artifactId>
+        <version>7.14.0</version>
+    </dependency>
+    <dependency>
+        <groupId>io.cucumber</groupId>
+        <artifactId>cucumber-picocontainer</artifactId>
+        <version>7.14.0</version>
+    </dependency>
+
+    <!-- JSON Parsing -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.15.2</version>
+    </dependency>
+</dependencies>
+```
+
+---
+
+### **Key Benefits**
+- **Dynamic Data**: Change test data by updating the JSON file without touching feature files.
+- **Reusability**: Use the same scenario for multiple datasets.
+- **Clarity**: Feature files focus on test flow, while data is externalized.
+
+---
+
+### **Final Notes**
+- **Scalability**: For large datasets, load JSON once (e.g., in a `@BeforeAll` hook).
+- **Error Handling**: Add checks for missing keys in the JSON file.
+- **Alternative Formats**: Use YAML or Excel instead of JSON by updating the data loader.
+
+This approach keeps your Gherkin clean and leverages Cucumber’s DI and hooks for dynamic data injection! 🚀
