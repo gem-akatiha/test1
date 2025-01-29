@@ -232,3 +232,226 @@ Ensure you have these dependencies in `pom.xml`:
 - **Alternative Formats**: Use YAML or Excel instead of JSON by updating the data loader.
 
 This approach keeps your Gherkin clean and leverages Cucumber’s DI and hooks for dynamic data injection! 🚀
+---
+Here’s a **step-by-step solution** to dynamically inject data from a JSON file into JUnit 5 test cases using keys, allowing you to avoid hardcoding values while leveraging parameterized tests:
+
+---
+
+### **1. Define JSON Structure**
+Create a JSON file (e.g., `testdata/login_data.json`) with **keys** mapped to values and a list of test cases referencing those keys:
+
+```json
+{
+  "data": {
+    "valid_user": "user1",
+    "valid_pass": "pass1",
+    "success_msg": "Welcome!",
+    "invalid_user": "invalid",
+    "invalid_pass": "wrong",
+    "failure_msg": "Login failed"
+  },
+  "test_cases": [
+    {
+      "name": "Valid credentials",
+      "username_key": "valid_user",
+      "password_key": "valid_pass",
+      "expected_result_key": "success_msg"
+    },
+    {
+      "name": "Invalid credentials",
+      "username_key": "invalid_user",
+      "password_key": "invalid_pass",
+      "expected_result_key": "failure_msg"
+    }
+  ]
+}
+```
+
+---
+
+### **2. Create a Test Case Model**
+Define a class to represent test cases loaded from JSON:
+
+```java
+public class LoginTestCase {
+    private String name;
+    private String usernameKey;
+    private String passwordKey;
+    private String expectedResultKey;
+
+    // Getters and setters (or use Lombok @Data)
+}
+```
+
+---
+
+### **3. Load JSON Data in `@BeforeAll`**
+Load the JSON file once before all tests run:
+
+```java
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import org.junit.jupiter.api.BeforeAll;
+import java.util.Map;
+import java.util.List;
+
+public class LoginTest {
+    private static Map<String, String> testData; // Stores key-value pairs
+    private static List<LoginTestCase> testCases; // List of test cases
+
+    @BeforeAll
+    static void loadTestData() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        // Parse the JSON file
+        Map<String, Object> jsonData = mapper.readValue(
+            new File("src/test/resources/testdata/login_data.json"),
+            new TypeReference<Map<String, Object>>() {}
+        );
+
+        // Extract the "data" and "test_cases" sections
+        testData = (Map<String, String>) jsonData.get("data");
+        testCases = mapper.convertValue(
+            jsonData.get("test_cases"),
+            new TypeReference<List<LoginTestCase>>() {}
+        );
+    }
+}
+```
+
+---
+
+### **4. Generate Dynamic Test Arguments**
+Use a `@MethodSource` to provide test cases dynamically:
+
+```java
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import java.util.stream.Stream;
+
+public class LoginTest {
+    // ...
+
+    static Stream<Arguments> provideLoginTestCases() {
+        return testCases.stream()
+            .map(tc -> Arguments.of(
+                tc.getName(),
+                tc.getUsernameKey(),
+                tc.getPasswordKey(),
+                tc.getExpectedResultKey()
+            ));
+    }
+}
+```
+
+---
+
+### **5. Write a Parameterized Test**
+Resolve keys to values and execute the test logic:
+
+```java
+import org.junit.jupiter.params.ParameterizedTest;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class LoginTest {
+    // ...
+
+    @ParameterizedTest(name = "{0}") // Use test case name as the display name
+    @MethodSource("provideLoginTestCases")
+    void testLogin(
+        String name,
+        String usernameKey,
+        String passwordKey,
+        String expectedResultKey
+    ) {
+        // Resolve keys to actual values
+        String username = testData.get(usernameKey);
+        String password = testData.get(passwordKey);
+        String expectedResult = testData.get(expectedResultKey);
+
+        // Execute test logic (e.g., call your login method)
+        String actualResult = login(username, password);
+
+        // Assert the result
+        assertEquals(expectedResult, actualResult);
+    }
+
+    private String login(String username, String password) {
+        // Your actual login logic here (mock or real)
+        if (username.equals("user1") && password.equals("pass1")) {
+            return "Welcome!";
+        } else {
+            return "Login failed";
+        }
+    }
+}
+```
+
+---
+
+### **Project Structure**
+```
+src/test/
+├── java/
+│   └── LoginTest.java
+├── resources/
+│   └── testdata/
+│       └── login_data.json
+```
+
+---
+
+### **Dependencies (Maven)**
+Add these to `pom.xml`:
+
+```xml
+<dependencies>
+    <!-- JUnit 5 -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter-api</artifactId>
+        <version>5.9.3</version>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter-engine</artifactId>
+        <version>5.9.3</version>
+        <scope>test</scope>
+    </dependency>
+
+    <!-- JSON Parsing -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.15.2</version>
+    </dependency>
+</dependencies>
+```
+
+---
+
+### **Key Features**
+- **Dynamic Test Cases**: Test cases are defined in JSON, so you can add/remove/modify them without changing Java code.
+- **Parameterized Tests**: JUnit runs one test per entry in `test_cases`, with clear names in test reports.
+- **Key-Value Mapping**: No hardcoded data in tests; keys resolve to values at runtime.
+
+---
+
+### **Output**
+When you run the tests, you’ll see:
+```
+├─ LoginTest ✔
+│  ├─ Valid credentials ✔
+│  └─ Invalid credentials ✔
+```
+
+---
+
+### **Customization Options**
+1. **Complex Data**: Nest JSON structures (e.g., `"data": { "users": { "valid": "user1" } }`).
+2. **Error Handling**: Add checks for missing keys in `testData`.
+3. **Multiple Files**: Split JSON into separate files (e.g., `login_data.json`, `profile_data.json`).
+
+---
+
+This approach keeps your tests **data-driven**, **maintainable**, and **scalable**, aligning with your requirement to inject data using keys at runtime! 🚀
