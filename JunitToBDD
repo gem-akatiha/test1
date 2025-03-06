@@ -1,0 +1,100 @@
+### **Step 1: Define a Common Step Library (`LoginSteps.java`)**  
+This class contains the reusable methods that both JUnit 5 and Cucumber can use.  
+
+```java
+package com.example.steps;
+
+import net.serenitybdd.annotations.Step;
+
+public class LoginSteps {
+
+    @Step("User opens the login page")
+    public void openLoginPage() {
+        System.out.println("Login page opened.");
+    }
+
+    @Step("User enters credentials and submits the form")
+    public void enterCredentialsAndLogin() {
+        System.out.println("Entered credentials and clicked login.");
+    }
+
+    @Step("User should see the homepage")
+    public void verifyLoginSuccess() {
+        System.out.println("Login successful, homepage displayed.");
+    }
+}
+```
+
+---
+
+### **Step 2: JUnit 5 Test (`LoginTest.java`)**  
+This test case calls the `LoginSteps` class methods directly.
+
+```java
+package com.example.tests;
+
+import com.example.steps.LoginSteps;
+import org.junit.jupiter.api.Test;
+
+public class LoginTest {
+
+    private final LoginSteps loginSteps = new LoginSteps();
+
+    @Test
+    public void testSuccessfulLogin() {
+        loginSteps.openLoginPage();
+        loginSteps.enterCredentialsAndLogin();
+        loginSteps.verifyLoginSuccess();
+    }
+}
+```
+
+---
+
+### **Step 3: Cucumber Feature File (`Login.feature`)**  
+Defines a BDD scenario.
+
+```gherkin
+Feature: User Login
+
+  Scenario: Successful Login
+    Given the user is on the login page
+    When the user enters valid credentials
+    Then the user should be logged in successfully
+```
+
+---
+
+### **Step 4: Cucumber Step Definitions (`LoginStepDefinitions.java`)**  
+Maps Cucumber steps to the `LoginSteps` methods.
+
+```java
+package com.example.definitions;
+
+import com.example.steps.LoginSteps;
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.When;
+import io.cucumber.java.en.Then;
+import net.serenitybdd.annotations.Steps;
+
+public class LoginStepDefinitions {
+
+    @Steps
+    private LoginSteps loginSteps;
+
+    @Given("the user is on the login page")
+    public void userIsOnLoginPage() {
+        loginSteps.openLoginPage();
+    }
+
+    @When("the user enters valid credentials")
+    public void userEntersCredentials() {
+        loginSteps.enterCredentialsAndLogin();
+    }
+
+    @Then("the user should be logged in successfully")
+    public void userShouldBeLoggedIn() {
+        loginSteps.verifyLoginSuccess();
+    }
+}
+```
