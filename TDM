@@ -1,0 +1,166 @@
+package hooks;
+
+import com.opencsv.CSVReader;
+import com.opencsv.exceptions.CsvValidationException;
+import io.cucumber.datatable.DataTable;
+import io.cucumber.java.Before;
+import io.cucumber.java.Scenario;
+
+import java.io.FileReader;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.net.URI;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+public class Hook {
+
+    private String featureFilePath;
+
+    private static List<Map<String, String>> injectedData;
+
+    public static List<Map<String, String>> getInjectedData() {
+        return injectedData;
+    }
+
+    @Before
+    public void extractPlaceholders(Scenario scenario) {
+        try {
+            // Recursively find CSV file. If not found, throw error
+            String csvFilePath = findCSVFile();
+
+            // Read the CSV at once and store the data
+            List<Map<String, String>> csvData = readCSV(csvFilePath);
+
+            // Step 1: Get feature file path
+            URI featureFileURI = scenario.getUri();
+            featureFilePath = Paths.get(featureFileURI).toString();
+
+            // Step 2: Read the entire feature file
+            String featureContent = new String(Files.readAllBytes(Paths.get(featureFilePath)));
+
+            // Step 3: Extract the full scenario text using regex
+            String scenarioText = extractScenarioText(featureContent, scenario.getName());
+
+            // Step 4: Find placeholders in Scenario Outline
+            Set<String> placeholders = extractPlaceholdersFromScenario(scenarioText);
+
+            // Step 5: Read the CSV file for the given placeholders and inject it
+            injectedData = injectDataForScenario(csvData, placeholders);
+
+            // Convert List<Map<String, String>> to List<List<String>> format required by DataTable
+            List<List<String>> tableData = new ArrayList<>();
+
+            // Add headers as the first row
+            if (!injectedData.isEmpty()) {
+                tableData.add(new ArrayList<>(injectedData.get(0).keySet()));
+            }
+
+            // Add values for each row
+            for (Map<String, String> row : injectedData) {
+                tableData.add(new ArrayList<>(row.values()));
+            }
+
+            DataTable dataTable = DataTable.create(tableData);
+            scenario.log("Updated Example Table: " + dataTable);
+
+        } catch (IOException e) {
+            System.out.println("Error reading feature file: " + e.getMessage());
+        }
+    }
+
+    private String extractScenarioText(String featureContent, String scenarioName) {
+        // Regex to match the complete scenario (Scenario or Scenario Outline)
+        Pattern pattern = Pattern.compile(
+                "(Scenario Outline|Scenario):\\s*" + Pattern.quote(scenarioName) + "\\s*(.*?)\\s*(Examples:|@|$)",
+                Pattern.DOTALL
+        );
+        Matcher matcher = pattern.matcher(featureContent);
+
+        return matcher.find() ? matcher.group(2).trim() : null;
+    }
+
+    private Set<String> extractPlaceholdersFromScenario(String scenarioText) {
+        Set<String> placeholders = new HashSet<>();
+        Pattern pattern = Pattern.compile("<(.*?)>");
+        Matcher matcher = pattern.matcher(scenarioText);
+
+        while (matcher.find()) {
+            placeholders.add(matcher.group(1));
+        }
+
+        return placeholders;
+    }
+
+
+/**
+     * This method searches for a specific CSV file within a given directory and its subdirectories.
+     *
+     * @return The path of the found CSV file as a String.
+     * @throws IOException If an I/O error occurs while accessing the file system.
+     * @throws FileNotFoundException If the specified CSV file is not found in the directory.
+     */
+    private String findCSVFile() throws IOException {
+        String parentDir = "src/test/resources";
+        String fileName = "country_full.csv";
+
+        try (Stream<Path> paths = Files.walk(Paths.get(parentDir))) {
+            return paths.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().equals(fileName))
+                    .findFirst()
+                    .map(Path::toString)
+                    .orElseThrow(() -> new IOException(fileName + " is not available in " + parentDir));
+        }
+    }
+
+    private List<Map<String, String>> readCSV(String csvFilePath) {
+        List<Map<String, String>> data = new ArrayList<>();
+        try (CSVReader reader = new CSVReader(new FileReader(csvFilePath))) {
+            String[] headers = reader.readNext(); // Read the header row
+            String[] values;
+
+            while ((values = reader.readNext()) != null) {
+                Map<String, String> row = new HashMap<>();
+                for (int i = 0; i < headers.length; i++) {
+                    row.put(headers[i], values[i]);
+                }
+                data.add(row);
+            }
+        } catch (IOException | CsvValidationException e) {
+            e.printStackTrace();
+        }
+
+        return data;
+    }
+
+    public List<Map<String, String>> injectDataForScenario(List<Map<String, String>> csvData, Set<String> placeholders) {
+        List<Map<String, String>> filteredData = new ArrayList<>();
+
+        for (Map<String, String> row : csvData) {
+            Map<String, String> filteredRow = new LinkedHashMap<>(); // Maintain order
+
+            for (String placeholder : placeholders) {
+                if (row.containsKey(placeholder)) {
+                    filteredRow.put(placeholder, row.get(placeholder));
+                } /*else {
+                    System.out.println("Missing column in CSV: " + placeholder);
+                }*/
+            }
+
+            if (!filteredRow.isEmpty()) {
+                filteredData.add(filteredRow);
+            }
+        }
+
+        // Debugging output
+        System.out.println("Final Injected Data: " + filteredData);
+        return filteredData;
+    }
+
+}
