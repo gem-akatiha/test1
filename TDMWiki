@@ -1,0 +1,105 @@
+# TDM-Based CSV Data Injection for JUnit 5
+
+## Introduction
+
+This module provides a custom way to inject CSV test data into JUnit 5 test methods using class-level and method-level annotations. Unlike the built-in `@CsvFileSource`, this approach allows dynamic resolution of the CSV file path at runtime, based on metadata provided at the class level.
+
+The idea is simple:
+- Specify a tile or data identifier using the `@TDM` annotation on your test class.
+- Mark only the test methods that require data injection using `@SmartCsvTest`.
+- The framework automatically scans for the relevant CSV file, extracts the specified columns, and injects them as method arguments.
+
+This approach avoids hardcoding file paths and ensures clean separation of metadata and test logic.
+
+---
+
+## Annotations
+
+### `@TDM`
+Applied at the class level to identify which CSV file to use.
+
+```java
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface TDM {
+    String tileCode(); // e.g., "abc" resolves to abc.csv
+}
+```
+
+### `@SmartCsvTest`
+Applied at the method level to specify the columns you want to inject from the resolved CSV.
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+@ParameterizedTest
+@ArgumentsSource(SmartCsvArgumentsProvider.class)
+public @interface SmartCsvTest {
+    String[] columns();
+}
+```
+
+---
+
+## Step-by-Step Usage
+
+### 1. Add the `@TDM` Annotation to Your Test Class
+```java
+@TDM(tileCode = "abc")
+public class LoginTests {
+    // test methods here
+}
+```
+
+This tells the framework to look for a CSV file like `abc.csv` in the predefined folder.
+
+### 2. Annotate Test Methods that Require CSV Data
+```java
+@SmartCsvTest(columns = {"username", "password"})
+void testLogin(String username, String password) {
+    // Test logic here
+}
+```
+
+Only the methods marked with `@SmartCsvTest` will receive the injected data.
+
+### 3. Folder Structure for CSV Files
+Ensure your test CSV files are placed under a folder like:
+```
+src/test/resources/test-data/abc.csv
+```
+The framework scans this folder to resolve the file by matching the tile code.
+
+---
+
+## How It Works Internally
+- The `SmartCsvArgumentsProvider` reads the `@TDM` annotation from the test class.
+- It locates the correct CSV file (e.g., `abc.csv`).
+- It reads the CSV, extracts only the required columns, and injects the values into the test method.
+
+If any required annotation or file is missing, helpful errors will be thrown.
+
+---
+
+## Optional: Using Extensions
+If you want to preload CSV data once per class (e.g., for performance), you can implement a `BeforeAllCallback` extension and use `@ExtendWith`.
+
+```java
+@ExtendWith({TdmCsvLoader.class})
+public class LoginTests {
+    ...
+}
+```
+
+This is optional and only needed if you want to optimize for large CSVs or shared pre-processing.
+
+---
+
+## Summary
+This TDM-based CSV injection system offers:
+- Dynamic CSV file resolution
+- Fine-grained control over which methods receive data
+- Cleaner test classes with less hardcoded logic
+
+It’s a robust, maintainable, and scalable alternative to JUnit's built-in CSV injection.
+
