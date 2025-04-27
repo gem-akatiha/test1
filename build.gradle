@@ -1,0 +1,14 @@
+// Add this inside your build.gradle (usually inside 'tasks' block or end of file)
+
+// Create a custom task to generate TDM features
+task generateTdmFeatures(type: JavaExec) {
+    group = 'verification'
+    description = 'Generate feature files by injecting TDM data'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.yourcompany.tdm.TdmFeatureGenerator'  // <== update package name if different
+}
+
+// Make 'test' depend on our generation
+test {
+    dependsOn generateTdmFeatures
+}
