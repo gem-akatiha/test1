@@ -1,0 +1,15 @@
+int page = 1;
+
+while (true) {
+    Response response = SerenityRest
+        .given()
+        .queryParam("page", page)
+        .get("https://api.example.com/items");
+
+    List<Map<String, Object>> items = response.jsonPath().getList("data");
+
+    if (items == null || items.isEmpty()) break;
+
+    process(items);
+    page++;
+}
