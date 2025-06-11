@@ -1,0 +1,97 @@
+Certainly! Here's a well-structured **Wiki page** you can use in your project to guide users about the upcoming deprecation of custom element classes like `Button`, `TextField`, `Image`, etc., in favor of using `WebElementFacade` directly.
+
+---
+
+## 📄 Element Abstraction Deprecation Notice
+
+### 🗓️ Effective From: **\[Your Next Release Version, e.g., v3.0.0]**
+
+---
+
+### ❗ Summary
+
+As part of ongoing efforts to simplify the framework and reduce unnecessary abstraction, we are **deprecating all custom element interfaces and classes** such as:
+
+* `Button`, `ButtonImpl`
+* `TextField`, `TextFieldImpl`
+* `Image`, `ImageImpl`
+* And similar element-specific wrappers
+
+These will be replaced by a single, consistent use of Serenity's built-in **`WebElementFacade`**.
+
+---
+
+### 🧠 Why This Change?
+
+| Issue with Current Setup | Why It Matters                                                                                             |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Redundant abstraction    | Classes like `Button`, `TextField` often replicate the same logic already available in `WebElementFacade`. |
+| Code bloat               | Multiple classes increase maintenance and cognitive load.                                                  |
+| Inconsistent usage       | Users are confused about when to use `Button.click()` vs. `WebElementFacade.click()`.                      |
+| Compatibility issues     | Wrappers sometimes swallow exceptions, hide errors, or complicate test debugging.                          |
+
+We aim to provide a **leaner, more reliable**, and **standardized approach** to element interaction.
+
+---
+
+### ✅ What You Should Do
+
+#### 🔁 Before:
+
+```java
+Button loginButton = page.getLoginButton();
+loginButton.clickWithRetry();
+
+TextField usernameField = page.getUsername();
+usernameField.type("admin");
+```
+
+#### ✅ After:
+
+```java
+WebElementFacade loginButton = page.getLoginButton();
+loginButton.click();
+
+WebElementFacade usernameField = page.getUsername();
+usernameField.type("admin");
+```
+
+#### 📌 If you were using any custom methods (e.g., `clickWithRetry()`), either:
+
+* Replace them with standard `WebElementFacade` methods, OR
+* Move those custom behaviors into **reusable helper classes** or **Steps classes**.
+
+---
+
+### ⚠️ Timeline and Deprecation Plan
+
+| Version | Change                                              |
+| ------- | --------------------------------------------------- |
+| v2.x    | `Button`, `TextField`, etc. marked as `@Deprecated` |
+| v3.0    | Deprecated classes will be **removed** entirely     |
+
+---
+
+### 🚨 What Happens If You Don't Update?
+
+If you continue using the deprecated classes:
+
+* Your IDE will show warnings
+* Your build may break once we remove the deprecated types
+* You may miss out on Serenity improvements in reporting, waiting, and error tracking
+
+---
+
+### 💬 FAQs
+
+**Q: I used `clickWithRetry()` — what now?**
+A: Move the retry logic to a `Steps` class or a utility. Serenity already waits for clickability; in most cases `element.click()` is enough.
+
+**Q: I liked the semantic meaning of `Button`, `TextField` etc. Can I still use that?**
+A: Yes! You can still add naming convention or use utility wrappers **outside** of core test logic, but the main interaction should be via `WebElementFacade`.
+
+---
+
+### 🙌 Thank You
+
+We appreciate your cooperation in helping us streamline the framework. These changes will make test automation more maintainable, consistent, and powerful.
