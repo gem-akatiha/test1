@@ -148,4 +148,150 @@ class PDFComparer:
             - list of (dummy_table_index, row_tuple, count_diff) missing in pdf2 (present more times in pdf1)
             - list of (dummy_table_index, row_tuple, count_diff) missing in pdf1 (present more in pdf2)
 
-        Note: Because we flattened across all tables, we don't preserve which p
+        Note: Because we flattened across all tables, we don't preserve which page/table a row came from.
+        If you need per-table comparison, we can extend the class to keep table-level metadata.
+        """
+        # Convert rows to tuples to be hashable
+        tuples1 = [tuple(row) for row in table_rows_pdf1]
+        tuples2 = [tuple(row) for row in table_rows_pdf2]
+
+        c1 = Counter(tuples1)
+        c2 = Counter(tuples2)
+
+        # Build lists of rows that have mismatched counts
+        missing_in_pdf2 = []
+        missing_in_pdf1 = []
+
+        # Rows present in pdf1 but missing or fewer in pdf2
+        for row, cnt1 in c1.items():
+            cnt2 = c2.get(row, 0)
+            if cnt1 > cnt2:
+                missing_in_pdf2.append((-1, row, cnt1 - cnt2))  # -1 is dummy index (we flattened)
+        # Rows present in pdf2 but missing or fewer in pdf1
+        for row, cnt2 in c2.items():
+            cnt1 = c1.get(row, 0)
+            if cnt2 > cnt1:
+                missing_in_pdf1.append((-1, row, cnt2 - cnt1))
+
+        equal = (len(missing_in_pdf2) == 0 and len(missing_in_pdf1) == 0)
+        return equal, missing_in_pdf2, missing_in_pdf1
+
+    # ---------------------------
+    # Public Comparison API
+    # ---------------------------
+    def compare_pdfs(self,
+                     pdf1_path: str,
+                     pdf2_path: str,
+                     *,
+                     text_order_sensitive: bool = True,
+                     treat_table_headers: bool = True) -> ComparisonResult:
+        """
+        Compare two PDFs' text and tables.
+
+        Parameters:
+            - pdf1_path, pdf2_path: paths to the PDFs
+            - text_order_sensitive: if True, text comparison is order-sensitive (uses unified diff).
+                                    If False, lines are sorted before comparison (order-insensitive).
+            - treat_table_headers: currently placeholder. If you want header detection and
+                                   per-table matching, we can extend it. For now we flatten tables.
+
+        Returns:
+            ComparisonResult dataclass with:
+                - text_equal: bool
+                - text_diffs: unified diff when not equal (empty list if equal)
+                - tables_equal: bool
+                - tables_missing_in_pdf2: list of rows missing in pdf2 (with counts)
+                - tables_missing_in_pdf1: list of rows missing in pdf1 (with counts)
+                - details: extra info (line counts, row counts, etc.)
+        """
+        # ---- Extract & normalize text lines ----
+        lines1 = self.extract_text_lines(pdf1_path)
+        lines2 = self.extract_text_lines(pdf2_path)
+
+        # ---- Compare text ----
+        if text_order_sensitive:
+            # compare in reading order
+            text_equal = (lines1 == lines2)
+            text_diffs = [] if text_equal else self._text_diffs(lines1, lines2)
+        else:
+            # order-insensitive: compare sorted lists (exact equality of the multiset of lines)
+            c1 = Counter(lines1)
+            c2 = Counter(lines2)
+            text_equal = (c1 == c2)
+            if not text_equal:
+                # produce a useful diff: lines present more times in one PDF
+                # list of (line, count_diff)
+                missing_in_pdf2 = []
+                missing_in_pdf1 = []
+                for ln, cnt1 in c1.items():
+                    cnt2 = c2.get(ln, 0)
+                    if cnt1 > cnt2:
+                        missing_in_pdf2.append((ln, cnt1 - cnt2))
+                for ln, cnt2 in c2.items():
+                    cnt1 = c1.get(ln, 0)
+                    if cnt2 > cnt1:
+                        missing_in_pdf1.append((ln, cnt2 - cnt1))
+                text_diffs = [
+                    f"Lines in pdf1 but under-represented in pdf2: {missing_in_pdf2}",
+                    f"Lines in pdf2 but under-represented in pdf1: {missing_in_pdf1}",
+                ]
+        # ---- Extract & normalize table rows (flattened) ----
+        table_rows1 = self.extract_all_table_rows(pdf1_path)
+        table_rows2 = self.extract_all_table_rows(pdf2_path)
+
+        # ---- Compare tables order-insensitive using Counter of row-tuples ----
+        tables_equal, missing_in_pdf2, missing_in_pdf1 = self._compare_tables_order_insensitive(table_rows1, table_rows2)
+
+        # ---- Build details for debugging ----
+        details = {
+            "text_line_count_pdf1": len(lines1),
+            "text_line_count_pdf2": len(lines2),
+            "table_row_count_pdf1": len(table_rows1),
+            "table_row_count_pdf2": len(table_rows2),
+        }
+
+        return ComparisonResult(
+            text_equal=text_equal,
+            text_diffs=text_diffs,
+            tables_equal=tables_equal,
+            tables_missing_in_pdf2=missing_in_pdf2,
+            tables_missing_in_pdf1=missing_in_pdf1,
+            details=details
+        )
+
+
+# ---------------------------
+# Example usage
+# ---------------------------
+if __name__ == "__main__":
+    import argparse
+    import json
+    parser = argparse.ArgumentParser(description="Compare two PDFs (text + tables)")
+    parser.add_argument("pdf1", help="Path to first PDF")
+    parser.add_argument("pdf2", help="Path to second PDF")
+    parser.add_argument("--text-order-sensitive", dest="tos", action="store_true", help="Make text comparison order-sensitive (default)")
+    parser.add_argument("--text-order-insensitive", dest="tos", action="store_false", help="Make text comparison order-insensitive")
+    parser.set_defaults(tos=True)
+    args = parser.parse_args()
+
+    comparer = PDFComparer()
+    result = comparer.compare_pdfs(args.pdf1, args.pdf2, text_order_sensitive=args.tos)
+
+    # Print a readable summary
+    print("===== Comparison Summary =====")
+    print(f"Text equal: {result.text_equal}")
+    if not result.text_equal:
+        print("--- Text diffs ---")
+        # If diffs are large, printing them all may be noisy; still print for exact comparison
+        for line in result.text_diffs:
+            print(line)
+    print(f"Tables equal: {result.tables_equal}")
+    if not result.tables_equal:
+        print("--- Table mismatches (rows present more times in pdf1 than pdf2) ---")
+        for dummy_idx, row, count_diff in result.tables_missing_in_pdf2:
+            print(f"Missing {count_diff}x -> {row}")
+        print("--- Table mismatches (rows present more times in pdf2 than pdf1) ---")
+        for dummy_idx, row, count_diff in result.tables_missing_in_pdf1:
+            print(f"Missing {count_diff}x -> {row}")
+
+    print("Details:", json.dumps(result.details, indent=2))
